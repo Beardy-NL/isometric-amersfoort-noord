@@ -12,7 +12,7 @@
 <meta property="og:image" content="https://beardy-nl.github.io/isometric-amersfoort-noord/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="De Architectenbuurt in Amersfoort in isometrische pixel art, met het meer en de halve cirkels van Zielhorst">
+<meta property="og:image:alt" content="De Architectenbuurt in Amersfoort in isometrische pixel art, met de vijver en de halve cirkels van Zielhorst">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://beardy-nl.github.io/isometric-amersfoort-noord/og.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -358,7 +358,7 @@
     <button type="button" id="intro-toggle" aria-expanded="true" aria-controls="intro-body" aria-label="Menu in- of uitklappen" data-en-label="Show or hide the menu"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 5l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   </div>
   <div id="intro-body">
-  <p data-en="Amersfoort&#x27;s Architectenbuurt in miniature, with the lake, Zielhorst and Kattenbroek around it, from the A28 to the Schothorst estate.">De Architectenbuurt in Amersfoort in miniatuur, met het meer, Zielhorst en Kattenbroek eromheen, van de A28 tot landgoed Schothorst.</p>
+  <p data-en="Amersfoort&#x27;s Architectenbuurt in miniature, with the pond, Zielhorst and Kattenbroek around it, from the A28 to the Schothorst estate.">De Architectenbuurt in Amersfoort in miniatuur, met de vijver, Zielhorst en Kattenbroek eromheen, van de A28 tot landgoed Schothorst.</p>
   <p class="long" data-en="Every house, every greenhouse and every tree stands in its real place, rebuilt from public maps, height measurements and an aerial photo. Scroll or pinch to zoom, or look up an address below.">Elk huis, elke kas en elke boom staat op zijn echte plek, nagebouwd uit openbare kaarten, hoogtemetingen en een luchtfoto. Scroll of knijp om te zoomen, of zoek hieronder een adres.</p>
   <form id="search" role="search">
     <input id="goto" list="place-list" placeholder="Ga naar een adres of plek…" autocomplete="off" aria-label="Ga naar een adres of plek" data-en-placeholder="Go to an address or place…" data-en-label="Go to an address or place">
@@ -594,7 +594,7 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
     scaleEl.textContent = `1 pixel = ${nl(100 / M.scale, 0)} cm · zoom ${ratio}`;
   }
 
-  // The view the map opens on and the home button goes back to: the big lake by the Architectenbuurt, at 1:1.3, on the
+  // The view the map opens on and the home button goes back to: the big pond by the Architectenbuurt, at 1:1.3, on the
   // water itself, so it sits in the middle whichever way the map is turned.
   function goHome(now) {
     const vp = viewer.viewport, { x, z } = rdToLocal(155511, 466130);
@@ -1643,7 +1643,7 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
       const [x, z, dx, dz] = place(m);
       if (inView(x, z, 0)) (objectsLayer && m.behind ? behind : front).push([depthOf(x, z), m, x, z, dx, dz]);
     }
-    // No swimmers here: the lake by the Architectenbuurt is no swimming water.
+    // No swimmers here: the pond by the Architectenbuurt is no swimming water.
     paint(ctx, b, k, front, inView);
   }
 
