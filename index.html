@@ -98,15 +98,6 @@
   #found { font-size: 12px; color: var(--peat); min-height: 1em; }
   #places, #series { display: flex; flex-wrap: wrap; gap: 6px; }
   #series { align-items: center; }
-  /* Before 1992: the Kadaster's old topographic map laid over the ground, faded in with a slider. */
-  svg.oldmap { pointer-events: none; }
-  /* OpenSeadragon shows every overlay it places, so hide it with a class, as for the walking routes. */
-  body:not(.show-oldmap) svg.oldmap { display: none !important; }
-  #oldmap-panel { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
-  #oldmap-panel[hidden] { display: none; }
-  #oldmap-panel label { display: flex; align-items: center; gap: 8px; }
-  #oldmap-panel input { flex: 1; }
-  #oldmap-panel a { color: inherit; }
   #series > span { font: 500 11px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-right: 2px; }
   button {
     font: 500 12px/1 var(--body);
@@ -216,7 +207,7 @@
   #legend i { display: inline-block; width: 18px; height: 0; border-top: 3px dashed #e2574c; vertical-align: middle; margin-right: 4px; }
   #legend i.long { border-top: 4px solid #f2c14e; }
   #legend b { font-weight: inherit; }
-  /* Voor en na 1992: a guided tour with a paper card for each stop. */
+  /* The guided tour (none on this map for now) with a paper card for each stop. */
   body.tour #readout, body.tour #minimap-frame { display: none; }
   .stop {
     width: 26px;
@@ -385,12 +376,7 @@
   </div>
   <div id="series" role="group" aria-label="Ontdek" data-en-label="Explore">
     <span data-en="Explore">Ontdek</span>
-    <button type="button" id="tour-toggle" aria-pressed="false" data-en="Before and after 1992" hidden>Voor en na 1992</button>
-    <button type="button" id="oldmap-toggle" aria-pressed="false" data-en="Map before 1992" hidden>Kaart van vóór 1992</button>
-  </div>
-  <div id="oldmap-panel" hidden>
-    <label><span data-en="Now">Nu</span><input id="oldmap-fade" type="range" min="0" max="100" value="85" aria-label="Oude kaart doorzichtiger of sterker" data-en-label="Old map fainter or stronger"><span id="oldmap-year">vroeger</span></label>
-    <a id="oldmap-credit" target="_blank" rel="noopener"></a>
+    <button type="button" id="tour-toggle" aria-pressed="false" hidden></button>
   </div>
   </div>
 </section>
@@ -462,7 +448,7 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
 </dialog>
 <div id="tip" hidden></div>
 
-<section id="tour" class="card" hidden aria-live="polite" aria-label="Rondleiding voor en na 1992" data-en-label="Tour: before and after 1992">
+<section id="tour" class="card" hidden aria-live="polite" aria-label="Rondleiding" data-en-label="Tour">
   <div class="card-head"><span id="tour-year"></span><span id="tour-count"></span></div>
   <h2 id="tour-title"></h2>
   <figure id="tour-figure" hidden><div id="tour-frame" class="frame"><img id="tour-img" alt=""></div><div id="tour-dots"></div><figcaption id="tour-credit"></figcaption></figure>
@@ -765,7 +751,6 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
     fetch('hotspots.json', { cache: 'no-store' }).then((r) => r.json()).then(addHotspots);
     fetch('routes.json', { cache: 'no-store' }).then((r) => r.json()).then(addRoutes);
     fetch('history.json', { cache: 'no-store' }).then((r) => r.json()).then(addTour);
-    fetch('oldmap.json', { cache: 'no-store' }).then((r) => r.json()).then(addOldmap).catch(() => {});
     fetch('traffic.json', { cache: 'no-store' }).then((r) => r.json()).then(addTraffic).catch(() => {});
   });
 
@@ -907,7 +892,7 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
     if (series && e.key === 'ArrowLeft') openSeries(series.cat, series.pos - 1);
   });
 
-  // Voor en na 1992 (history.json, built by scripts/build_history.py): numbered stops and a guided tour.
+  // The tour (history.json, built by scripts/build_history.py): numbered stops and a guided tour.
   let stops = [], stopEls = [], current = -1;
   const tourBtn = document.getElementById('tour-toggle');
   const tourEl = document.getElementById('tour');
@@ -1072,48 +1057,6 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
       anchor(el, n.at[0], n.at[1], 0);
     }
   }
-
-  // Before 1992 (oldmap.json, built by scripts/build_oldmap.py): the Kadaster's topographic map from before Zielhorst
-  // was built, laid flat on the ground. Map pixel (i, j) goes to the ground in RD and from there to the image, which is
-  // one affine transform for the whole picture; it is set again when the map turns.
-  const oldBtn = document.getElementById('oldmap-toggle'), oldPanel = document.getElementById('oldmap-panel');
-  const oldFade = document.getElementById('oldmap-fade');
-  let oldSvg = null;
-  function addOldmap(d) {
-    oldSvg = document.createElementNS(SVG, 'svg');
-    oldSvg.setAttribute('class', 'oldmap');
-    oldSvg.setAttribute('viewBox', `0 0 ${M.width} ${M.height}`);
-    oldSvg.setAttribute('preserveAspectRatio', 'none');
-    const img = document.createElementNS(SVG, 'image');
-    img.setAttribute('href', d.src);
-    img.setAttribute('width', d.w);
-    img.setAttribute('height', d.h);
-    img.setAttribute('preserveAspectRatio', 'none');
-    oldSvg.appendChild(img);
-    const res = (d.xmax - d.xmin) / d.w;
-    const place = () => {
-      const at = (X, Y) => { const g = rdToLocal(X, Y); return groundToImage(g.x, g.z, 0); };
-      const o = at(d.xmin, d.ymax), i = at(d.xmin + res, d.ymax), j = at(d.xmin, d.ymax - res);
-      img.setAttribute('transform', `matrix(${i.x - o.x} ${i.y - o.y} ${j.x - o.x} ${j.y - o.y} ${o.x} ${o.y})`);
-    };
-    place();
-    onView.push(place);
-    viewer.addOverlay({ element: oldSvg, location: new OpenSeadragon.Rect(0, 0, 1, M.height / M.width) });
-    document.getElementById('oldmap-year').textContent = d.year;
-    const credit = document.getElementById('oldmap-credit');
-    credit.textContent = d.credit;
-    credit.href = d.url;
-    oldSvg.style.opacity = oldFade.value / 100;
-    oldBtn.hidden = false;
-  }
-  oldBtn.addEventListener('click', () => {
-    if (!oldSvg) return;
-    const on = !document.body.classList.contains('show-oldmap');
-    document.body.classList.toggle('show-oldmap', on);
-    oldPanel.hidden = !on;
-    oldBtn.setAttribute('aria-pressed', String(on));
-  });
-  oldFade.addEventListener('input', () => { if (oldSvg) oldSvg.style.opacity = oldFade.value / 100; });
 
   const routesBtn = document.getElementById('routes-toggle');
   routesBtn.addEventListener('click', () => {
