@@ -1,0 +1,116 @@
+{
+ "stops": [
+  {
+   "n": 1,
+   "year": "ca. 1850",
+   "title": "Huize Schothorst",
+   "text": "Vóór 1992: het landhuis van landgoed Schothorst stond hier al lang. Na 1992: de nieuwe wijken Zielhorst en Kattenbroek liggen er nu vlak naast, en het landgoed is een stadspark. Het huis is een rijksmonument.",
+   "x": 154820,
+   "y": 465503,
+   "h": 0,
+   "zoom": 1.2,
+   "source": {
+    "label": "Rijksmonumentenregister, nr. 517674",
+    "url": "https://monumentenregister.cultureelerfgoed.nl/monumenten/517674"
+   },
+   "more": null,
+   "photos": []
+  },
+  {
+   "n": 2,
+   "year": "1987–1991",
+   "title": "Zielhorst wordt gebouwd",
+   "text": "Vóór 1987 stond hier nog geen wijk: zet de kaart van vóór 1992 aan om te zien wat er wel lag. Tussen 1987 en 1991 werd Zielhorst aangelegd, met de Architectenbuurt in het midden. De wijk is genoemd naar boerderij Zielhorst in Hoogland.",
+   "x": 155800,
+   "y": 465950,
+   "h": 0,
+   "zoom": 1.2,
+   "source": {
+    "label": "Archief Eemland, Wijken en straten: Zielhorst",
+    "url": "https://www.archiefeemland.nl/hulp-bij-onderzoek/tips/wijken-en-straten/zielhorst"
+   },
+   "more": null,
+   "photos": []
+  },
+  {
+   "n": 3,
+   "year": "na 1992",
+   "title": "Maquette Kattenbroek",
+   "text": "In Emiclaer staat de wijk nog een keer, in het klein: een maquette van Kattenbroek als kunstwerk, een beetje zoals deze kaart.",
+   "x": 155666,
+   "y": 466398,
+   "h": 0,
+   "zoom": 1.2,
+   "source": {
+    "label": "OpenStreetMap",
+    "url": "https://www.openstreetmap.org/"
+   },
+   "more": null,
+   "photos": []
+  },
+  {
+   "n": 4,
+   "year": "1989",
+   "title": "Winkelcentrum Emiclaer",
+   "text": "In 1989 ontwierp atelier PRO het winkelcentrum voor de nieuwe wijken: 18.000 m² winkels met 264 woningen erboven en ernaast, aan een plein dat uitkomt op de Laan der Hoven. Onder 'Lees meer' staat de geschiedenis van de oude boerderij Klein Emiclaer.",
+   "x": 155660,
+   "y": 466519,
+   "h": 0,
+   "zoom": 1.2,
+   "source": {
+    "label": "atelier PRO: Stadsdeelcentrum Emiclaer",
+    "url": "https://atelierpro.nl/en/projects/109/district-centre-emiclaer"
+   },
+   "more": "https://dspace.library.uu.nl/handle/1874/285330",
+   "photos": []
+  },
+  {
+   "n": 5,
+   "year": "1988–1994",
+   "title": "Het Masker",
+   "text": "Bhalotra bouwde Kattenbroek op uit vijf vormen met elk een eigen naam: De Ring, de Laan der Hoven, de Verborgen Zone, Het Masker en De Kreek. Het Masker is de lange, gebogen wand van huizen aan deze kant van de wijk.",
+   "x": 155996,
+   "y": 466718,
+   "h": 0,
+   "zoom": 1.2,
+   "source": {
+    "label": "ArchitectureGuide.nl: Stedenbouw Kattenbroek",
+    "url": "https://www.architectureguide.nl/project/item/prj_id/1017/alfa/U"
+   },
+   "more": null,
+   "photos": []
+  },
+  {
+   "n": 6,
+   "year": "1988–1994",
+   "title": "Kattenbroek: De Ring",
+   "text": "Ten westen van Zielhorst tekende Ashok Bhalotra (Kuiper Compagnons) de wijk Kattenbroek. Het hart is De Ring: een buurt binnen een volmaakte cirkel van huizen, even groot als de oude binnenstad van Amersfoort.",
+   "x": 155260,
+   "y": 466760,
+   "h": 0,
+   "zoom": 1.2,
+   "source": {
+    "label": "ArchitectureGuide.nl: Stedenbouw Kattenbroek",
+    "url": "https://www.architectureguide.nl/project/item/prj_id/1017/alfa/U"
+   },
+   "more": null,
+   "photos": []
+  },
+  {
+   "n": 7,
+   "year": "na 1992",
+   "title": "Labyrint van Jacques Vieille",
+   "text": "In het park bij De Ring ligt een doolhof dat ook een kunstwerk is, van de Franse kunstenaar Jacques Vieille.",
+   "x": 155208,
+   "y": 466658,
+   "h": 0,
+   "zoom": 1.2,
+   "source": {
+    "label": "OpenStreetMap",
+    "url": "https://www.openstreetmap.org/"
+   },
+   "more": null,
+   "photos": []
+  }
+ ]
+}
