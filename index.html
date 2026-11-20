@@ -1263,6 +1263,7 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
         for (let n = Math.floor((l.len / 1000) * (l[DENSITY[mode]] || 0) + Math.random()); n > 0; n--) movers.push(newMover(i, Math.random() * l.len, mode));
       }
     });
+    addShoppers();
     for (let i = 0; i < 3; i++) spawnFlock(0.2 + Math.random() * 0.6);
     layerObjects();
     layer = document.createElement('canvas');
@@ -1276,6 +1277,34 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
   }
 
   const tone = (list) => pick(list, (c) => c[3]);
+
+  // Shopping centre Emiclaer: busy with people on foot (no dogs, no runners), who keep to its walkways and squares.
+  // They are ordinary walkers of the traffic, so they also disappear behind the buildings like the others; at the
+  // edge of the centre they turn round instead of walking off into the neighbourhood.
+  const SHOP = { x: 155700, y: 466440, r: 125, people: 110 };
+  let shopLanes = new Set();
+  function addShoppers() {
+    const c = rdToLocal(SHOP.x, SHOP.y);
+    lanes.forEach((l, i) => {
+      const [x, z] = l.p[Math.floor(l.p.length / 2)];
+      if (l.ww && Math.hypot(x - c.x, z - c.z) < SHOP.r) shopLanes.add(i);
+    });
+    const list = [...shopLanes], total = list.reduce((t, i) => t + lanes[i].len, 0);
+    if (!total) return;
+    for (let n = 0; n < SHOP.people; n++) {
+      let r = Math.random() * total, i = list[0];
+      for (const j of list) if ((r -= lanes[j].len) <= 0) { i = j; break; }
+      const m = newMover(i, Math.random() * lanes[i].len, WALK);
+      delete m.dog;
+      m.run = false;
+      m.shop = true;
+      m.pace = 0.8 + Math.random() * 0.5; // strolling past the shop windows
+      m.people.forEach((q) => (q.bag = Math.random() < 0.55 ? tone(BAGS) : null));
+      m.next = nextOf(i, WALK, true);
+      movers.push(m);
+    }
+  }
+  const BAGS = [[236, 236, 232, 3], [196, 40, 44, 2], [40, 70, 150, 2], [226, 170, 60, 1], [30, 30, 34, 2], [120, 160, 90, 1]];
 
   function newMover(lane, s, mode) {
     const l = lanes[lane], r = Math.random();
@@ -1306,9 +1335,17 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
 
   // The lane taken after this one: not back the way it came unless the road ends there, cars more often onto the
   // bigger road, cyclists onto cycle paths and quiet roads, walkers onto footpaths, village streets and farm tracks.
-  function nextOf(li, mode) {
+  function nextOf(li, mode, shop = false) {
     const l = lanes[li], weight = (j) => lanes[j][WEIGHT[mode]] || 0;
-    const all = (outs.get(l.b) || []).filter((j) => weight(j) > 0);
+    let all = (outs.get(l.b) || []).filter((j) => weight(j) > 0);
+    if (shop) {
+      // Shoppers stay in the centre: onward if the walkway goes on inside it, otherwise back the way they came.
+      const inside = all.filter((j) => shopLanes.has(j));
+      const ahead = inside.filter((j) => lanes[j].e !== l.e);
+      if (ahead.length) return pick(ahead, weight);
+      if (inside.length) return inside[0];
+      all = all.length ? all : [];
+    }
     const ahead = all.filter((j) => lanes[j].e !== l.e);
     if (ahead.length) return pick(ahead, weight);
     return exits.has(l.b) || !all.length ? null : all[0];
@@ -1380,7 +1417,7 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
       m.hx = (ex - px) / hl, m.hz = (ez - pz) / hl;
       m.s -= m.jl;
     }
-    m.next = nextOf(m.lane, m.mode);
+    m.next = nextOf(m.lane, m.mode, m.shop);
   }
 
   // Position and heading on the ground (local x east, z south); cyclists and walkers keep to the side of the road.
@@ -1539,6 +1576,7 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
         [-0.12, 0.12, 0.2, 0.8 + lift, 1.4 + lift, p.coat],
         [-0.09, 0.09, 0.09, 1.42 + lift, 1.62 + lift, p.skin],
         [-0.1, 0.06, 0.1, 1.6 + lift, 1.68 + lift, p.hair],
+        ...(p.bag ? [[-0.12, 0.12, 0.05, 0.45 + lift, 0.85 + lift, p.bag, 0.28]] : []),
       ])];
     });
     let lead = null;
