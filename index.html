@@ -1884,6 +1884,7 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
       }
     }
     if (d.fountain) out.fountain = local(d.fountain.x, d.fountain.y);
+    if (d.pond) out.pond = makePond(d.pond);
     if (d.fuel) {
       const f = fieldOf(d.fuel);
       out.fuel = { f, pumps: d.fuel.pumps.map(([X, Y]) => local(X, Y)), cars: d.fuel.pumps.map((_, i) => ({ paint: [[200, 30, 36], [230, 230, 228], [40, 44, 52], [60, 90, 160], [150, 152, 156], [30, 90, 60]][i % 6], off: rnd(i + 3) * 60, side: i % 2 ? 1 : -1 })) };
@@ -1933,22 +1934,87 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
     }
   }
 
-  // The fountain: a jet of about 7 m that falls back in a crown, white spray and rings on the water.
+  // The fountain: a jet of about 14 m that falls back in a wide crown, spray drifting off, and rings that spread
+  // over the water from where it comes down.
   function fountainItem(items) {
     const { x, z } = extras.fountain;
     items.push({ x, z, draw: (ctx) => {
-      ripple(ctx, x, z, 3.2 + 0.25 * Math.sin(clock * 1.3), 0.35);
-      ripple(ctx, x, z, 1.8 + 0.2 * Math.sin(clock * 2.1), 0.5);
-      for (let i = 0; i < 90; i++) {
-        const t = (clock * 0.55 + i / 90) % 1, a = i * 2.39996;
-        const r = (i % 3 === 0 ? 0.3 : 2.4) * t + 0.1 * Math.sin(clock * 3 + i);
-        const h = (i % 3 === 0 ? 7.2 : 5.2) * 4 * t * (1 - t);
-        const [px, py] = toPx(x + Math.cos(a) * r, z + Math.sin(a) * r, h);
+      for (let k = 0; k < 4; k++) { // rings spreading from the foot of the jet
+        const t = (clock * 0.25 + k / 4) % 1;
+        ripple(ctx, x, z, 2 + 9 * t, 0.45 * (1 - t));
+      }
+      const [fx, fy] = toPx(x, z, 0);
+      ctx.beginPath(); ctx.ellipse(fx, fy, 5.2 * M.scale, 2.6 * M.scale, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(235,244,252,0.35)'; ctx.fill(); // foam where the water falls
+      for (let i = 0; i < 220; i++) {
+        const jet = i % 4 === 0, t = (clock * (jet ? 0.42 : 0.5) + i / 220) % 1, a = i * 2.39996;
+        const r = (jet ? 0.6 : 4.6) * t + 0.15 * Math.sin(clock * 3 + i);
+        const h = (jet ? 14 : 9) * 4 * t * (1 - t);
+        const drift = 0.8 * t * t; // the wind takes the spray a little east
+        const [px, py] = toPx(x + Math.cos(a) * r + drift, z + Math.sin(a) * r, h);
         ctx.beginPath();
-        ctx.arc(px, py, 0.55 + 0.35 * (1 - t), 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(240,248,255,${0.75 - 0.45 * t})`;
+        ctx.arc(px, py, (jet ? 1.1 : 0.85) + 0.5 * (1 - t), 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(244,250,255,${0.8 - 0.5 * t})`;
         ctx.fill();
       }
+    } });
+  }
+
+  // The pond: little waves that come and go in rows drifting with the wind, a light crest and a darker trough each,
+  // only on open water (not over the islands or under the footbridges).
+  function makePond(d) {
+    const rings = d.rings.map((r) => r.map(([X, Y]) => { const q = local(X, Y); return [q.x, q.z]; }));
+    const cuts = d.bridges.map((r) => r.map(([X, Y]) => { const q = local(X, Y); return [q.x, q.z]; }));
+    const inRing = (x, z, r) => {
+      let c = false;
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+        if ((r[i][1] > z) !== (r[j][1] > z) && x < ((r[j][0] - r[i][0]) * (z - r[i][1])) / (r[j][1] - r[i][1]) + r[i][0]) c = !c;
+      }
+      return c;
+    };
+    const wet = (x, z) => inRing(x, z, rings[0]) && !rings.slice(1).some((r) => inRing(x, z, r)) && !cuts.some((r) => inRing(x, z, r));
+    const xs = rings[0].map((p) => p[0]), zs = rings[0].map((p) => p[1]);
+    const waves = [];
+    for (let x = Math.min(...xs); x < Math.max(...xs); x += 5) {
+      for (let z = Math.min(...zs); z < Math.max(...zs); z += 3.6) {
+        const jx = x + (hash01(x * 3.1 + z) - 0.5) * 3, jz = z + (hash01(z * 2.7 - x) - 0.5) * 2.4;
+        if (wet(jx, jz)) waves.push([jx, jz, hash01(jx + jz * 7) * 6.28, 0.7 + hash01(jx * 5 - jz) * 0.9]);
+      }
+    }
+    let sx = 0, sz = 0;
+    for (const [x, z] of waves) sx += x, sz += z;
+    return { rings, cuts, waves, x: sx / waves.length, z: sz / waves.length };
+  }
+  const WIND = [0.8, 0.6]; // the waves drift toward the south-east, slowly
+  function pondItem(items) {
+    const p = extras.pond;
+    // Always drawn (the pond is larger than the view), first of all (it lies under everything else).
+    items.push({ x: p.x, z: p.z, behind: true, always: true, depth: 1e9, draw: (ctx) => {
+      ctx.save();
+      ctx.beginPath();
+      for (const r of [...p.rings, ...p.cuts]) {
+        r.forEach(([x, z], i) => { const [px, py] = toPx(x, z, 0); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+        ctx.closePath();
+      }
+      ctx.clip('evenodd');
+      ctx.lineCap = 'round';
+      const nx = -WIND[1], nz = WIND[0]; // along the crest, across the wind
+      const drift = clock * 0.35;
+      for (const [x0, z0, ph, len] of p.waves) {
+        // A crest rises and falls as rows of waves pass: the phase moves with the wind.
+        const w = Math.sin(ph + (x0 * WIND[0] + z0 * WIND[1]) * 0.35 - clock * 1.1);
+        if (w < 0.2) continue;
+        const a = (w - 0.2) / 0.8;
+        const x = x0 + WIND[0] * ((drift + ph) % 3), z = z0 + WIND[1] * ((drift + ph) % 3);
+        const ends = (o) => [toPx(x - nx * len + WIND[0] * o, z - nz * len + WIND[1] * o, 0), toPx(x + nx * len + WIND[0] * o, z + nz * len + WIND[1] * o, 0)];
+        const [[ax, ay], [bx, by]] = ends(0.25);
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo((ax + bx) / 2, (ay + by) / 2 - 0.6, bx, by);
+        ctx.lineWidth = 0.9; ctx.strokeStyle = `rgba(4,12,26,${0.35 * a})`; ctx.stroke(); // the trough
+        const [[cx, cy], [dx, dy]] = ends(0);
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.quadraticCurveTo((cx + dx) / 2, (cy + dy) / 2 - 0.6, dx, dy);
+        ctx.lineWidth = 0.7; ctx.strokeStyle = `rgba(200,222,240,${0.32 * a})`; ctx.stroke(); // the crest catching the light
+      }
+      ctx.restore();
     } });
   }
 
@@ -2022,6 +2088,7 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
     const items = [];
     const inArea = (x, z) => Math.abs(x) < M.area.hx - 3 && Math.abs(z) < M.area.hz - 3;
     if (k >= 0.12) {
+      if (extras.pond && inView(extras.pond.x, extras.pond.z, 0)) pondItem(items);
       if (extras.fountain) fountainItem(items);
       trainItems(items, inArea);
     }
@@ -2034,10 +2101,10 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
       for (const c of extras.tennis) if (inView(c.x, c.z, 0)) front.push([depthOf(c.x, c.z), c, c.x, c.z, c.ux, c.uz]);
     }
     for (const it of items) {
-      if (!inView(it.x, it.z, 0)) continue;
+      if (!it.always && !inView(it.x, it.z, 0)) continue;
       it.mode = EXTRA;
       it.alpha ??= 1;
-      (objectsLayer && it.behind ? behind : front).push([depthOf(it.x, it.z), it, it.x, it.z, 1, 0]);
+      (objectsLayer && it.behind ? behind : front).push([it.depth ?? depthOf(it.x, it.z), it, it.x, it.z, 1, 0]);
     }
   }
 
