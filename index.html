@@ -1199,7 +1199,7 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
     // The free part of the screen, in pixels.
     let fx = 0, fy = 0, fw = cw, fh = ch;
     const intro = document.getElementById('intro'), c = viewer.container.getBoundingClientRect();
-    if (intro && intro.offsetParent) {
+    if (intro && intro.getClientRects().length) {
       const r = intro.getBoundingClientRect();
       if (cw - (r.right - c.left) > 320) { fx = r.right - c.left; fw = cw - fx; }
       else if (ch - (r.bottom - c.top) > 240) { fy = r.bottom - c.top; fh = ch - fy; }
