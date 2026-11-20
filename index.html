@@ -360,7 +360,7 @@
     <button type="button" id="intro-toggle" aria-expanded="true" aria-controls="intro-body" aria-label="Menu in- of uitklappen" data-en-label="Show or hide the menu"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 5l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   </div>
   <div id="intro-body">
-  <p data-en="Amersfoort&#x27;s Architectenbuurt in miniature, with the pond, Zielhorst and Kattenbroek around it, from the A28 to the Schothorst estate.">De Architectenbuurt in Amersfoort in miniatuur, met de vijver, Zielhorst en Kattenbroek eromheen, van de A28 tot landgoed Schothorst.</p>
+  <p data-en="Until 1974 this was part of the municipality of Hoogland: meadows and farms around the Schothorst estate. Then Amersfoort grew north: Schothorst-Zuid in the 1970s, Schothorst-Noord in the 1980s. In the late 1980s Amersfoort became a growth city and some 11,000 homes were planned here, in Zielhorst and, from 1990, in Kattenbroek, built entirely to architects&#x27; designs.">Tot 1974 hoorde dit gebied bij de gemeente Hoogland: weilanden en boerderijen rond landgoed Schothorst. Daarna groeide Amersfoort naar het noorden: Schothorst-Zuid in de jaren zeventig, Schothorst-Noord in de jaren tachtig. Eind jaren tachtig werd Amersfoort groeistad en moesten hier zo&#x27;n 11.000 woningen bijkomen, in Zielhorst en vanaf 1990 in Kattenbroek, helemaal onder architectuur gebouwd.</p>
   <p class="long" data-en="Every house, every greenhouse and every tree stands in its real place, rebuilt from public maps, height measurements and an aerial photo. Scroll or pinch to zoom, or look up an address below.">Elk huis, elke kas en elke boom staat op zijn echte plek, nagebouwd uit openbare kaarten, hoogtemetingen en een luchtfoto. Scroll of knijp om te zoomen, of zoek hieronder een adres.</p>
   <form id="search" role="search">
     <input id="goto" list="place-list" placeholder="Ga naar een adres of plek…" autocomplete="off" aria-label="Ga naar een adres of plek" data-en-placeholder="Go to an address or place…" data-en-label="Go to an address or place">
@@ -1340,7 +1340,7 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
   // Shopping centre Emiclaer: busy with people on foot (no dogs, no runners), who keep to its walkways and squares.
   // They are ordinary walkers of the traffic, so they also disappear behind the buildings like the others; at the
   // edge of the centre they turn round instead of walking off into the neighbourhood.
-  const SHOP = { x: 155700, y: 466440, r: 125, people: 110 };
+  const SHOP = { x: 155700, y: 466440, r: 125, people: 40 };
   let shopLanes = new Set();
   function addShoppers() {
     const c = rdToLocal(SHOP.x, SHOP.y);
@@ -2045,14 +2045,14 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
       ctx.beginPath(); ctx.ellipse(fx, fy, 6.5 * M.scale, 3.25 * M.scale, 0, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(235,244,252,0.35)'; ctx.fill(); // foam
       JETS.forEach(([ox, oz, top], j) => {
-        for (let i = 0; i < 80; i++) {
-          const core = i % 3 === 0, t = (clock * (core ? 0.42 : 0.5) + i / 80 + j * 0.13) % 1, a = i * 2.39996 + j;
+        for (let i = 0; i < 40; i++) { // 40 drops a jet: half of what it was, hardly to be seen but lighter
+          const core = i % 3 === 0, t = (clock * (core ? 0.42 : 0.5) + i / 40 + j * 0.13) % 1, a = i * 2.39996 + j;
           const r = (core ? 0.4 : 2.2) * t + 0.12 * Math.sin(clock * 3 + i);
           const h = (core ? top : top * 0.68) * 4 * t * (1 - t);
           const drift = 0.8 * t * t; // the wind takes the spray a little east
           const [px, py] = toPx(x + ox + Math.cos(a) * r + drift, z + oz + Math.sin(a) * r, h);
           ctx.beginPath();
-          ctx.arc(px, py, (core ? 1 : 0.8) + 0.45 * (1 - t), 0, Math.PI * 2);
+          ctx.arc(px, py, (core ? 1.2 : 1) + 0.5 * (1 - t), 0, Math.PI * 2);
           ctx.fillStyle = `rgba(244,250,255,${0.8 - 0.5 * t})`;
           ctx.fill();
         }
@@ -2190,14 +2190,19 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
     const items = [];
     const inArea = (x, z) => Math.abs(x) < M.area.hx - 3 && Math.abs(z) < M.area.hz - 3;
     if (k >= 0.12) {
-      if (extras.fountain) fountainItem(items);
+      if (extras.fountain && inView(extras.fountain.x, extras.fountain.z, 0)) fountainItem(items);
       trainItems(items, inArea);
     }
-    for (const g of extras.games) stepGame(g); // the games go on while nobody looks
+    // A game is only worked out while it is in view; out of view it waits where it was (cheaper on a slow laptop).
+    for (const g of extras.games) {
+      if (k >= 0.35 && inView(g.f.x, g.f.z, 0)) stepGame(g);
+      else g.last = clock;
+    }
     if (k >= 0.35) {
       for (const g of extras.games) if (inView(g.f.x, g.f.z, 0)) gameItems(g, items);
-      if (extras.training) trainingItems(items);
-      if (extras.ref) refItem(items);
+      if (extras.training && inView(extras.training.f.x, extras.training.f.z, 0)) trainingItems(items);
+      if (extras.ref && inView(extras.ref.f.x, extras.ref.f.z, 0)) refItem(items);
+      else if (extras.ref) extras.ref.last = clock;
       if (extras.fuel && inView(extras.fuel.f.x, extras.fuel.f.z, 0)) fuelItems(items);
       for (const c of extras.tennis) if (inView(c.x, c.z, 0)) front.push([depthOf(c.x, c.z), c, c.x, c.z, c.ux, c.uz]);
     }
