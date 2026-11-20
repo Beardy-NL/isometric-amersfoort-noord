@@ -1884,7 +1884,7 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
       }
     }
     if (d.fountain) out.fountain = local(d.fountain.x, d.fountain.y);
-    if (d.pond) out.pond = makePond(d.pond);
+    // No waves on the pond: they made the map slow and added little (makePond and pondItem are kept for later).
     if (d.fuel) {
       const f = fieldOf(d.fuel);
       out.fuel = { f, pumps: d.fuel.pumps.map(([X, Y]) => local(X, Y)), cars: d.fuel.pumps.map((_, i) => ({ paint: [[200, 30, 36], [230, 230, 228], [40, 44, 52], [60, 90, 160], [150, 152, 156], [30, 90, 60]][i % 6], off: rnd(i + 3) * 60, side: i % 2 ? 1 : -1 })) };
@@ -2097,7 +2097,6 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
       trainItems(items, inArea);
     }
     for (const g of extras.games) stepGame(g); // the games go on while nobody looks
-    if (k >= 0.3 && extras.pond) pondItem(items, inView);
     if (k >= 0.35) {
       for (const g of extras.games) if (inView(g.f.x, g.f.z, 0)) gameItems(g, items);
       if (extras.training) trainingItems(items);
