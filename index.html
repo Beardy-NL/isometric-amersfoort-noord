@@ -1229,7 +1229,7 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
     truck: { half: 7.6, sort: true, boxes: [[-7.4, 7.4, 1.2, 0.45, 1.05, 'dark'], [-7.4, 5.0, 1.25, 1.05, 3.9, 'load'], [5.3, 7.6, 1.22, 0.55, 3.15, 'cab']] },
     bike: { half: 0.9, bike: true, boxes: [[-0.85, 0.85, 0.05, 0.3, 0.75, 'dark'], [-0.32, 0.14, 0.2, 0.8, 1.42, 'body'], [-0.12, 0.08, 0.1, 1.42, 1.66, 'load']] },
   };
-  const CAR = 0, BIKE = 1, WALK = 2, SWIM = 3, WEIGHT = ['w', 'wb', 'ww'], DENSITY = ['d', 'db', 'dw'], SIDE = [null, 'bo', 'wo'];
+  const CAR = 0, BIKE = 1, WALK = 2, SWIM = 3, PADEL = 4, WEIGHT = ['w', 'wb', 'ww'], DENSITY = ['d', 'db', 'dw'], SIDE = [null, 'bo', 'wo'];
   let lanes = [], movers = [], layer = null, off = null;
   const outs = new Map(), entries = { car: {}, bike: [], walk: [] };
   let exits = new Set();
@@ -1518,6 +1518,7 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
   function drawMover(ctx, m, x, z, dx, dz) {
     if (m.mode === WALK) return drawWalker(ctx, m, x, z, dx, dz);
     if (m.mode === SWIM) return drawDippers(ctx, m);
+    if (m.mode === PADEL) return drawPadel(ctx, m);
     const V = VEHICLES[m.type];
     drawBoxes(ctx, x, z, dx, dz, V.boxes, (role) => (role === 'dark' ? DARK : role === 'load' ? m.load : m.paint), { sort: V.sort, outline: !V.bike });
   }
@@ -1596,6 +1597,99 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
     for (const [, draw] of parts) draw();
   }
 
+  // Padel: four players on each of the six courts at the sports park by Schothorst (OpenStreetMap ways 1111172588 to
+  // 1111172593, corners in RD), playing doubles. The ball goes from one side to the other in a high arc, bounces once
+  // on the far side, and the player nearest to where it comes takes it; the others shuffle along. After a few shots
+  // the point is over and they wait a moment before the next serve.
+  const COURTS = [
+    [[154542.9, 465558.4], [154552.6, 465556.0], [154547.6, 465536.7], [154538.0, 465539.2]],
+    [[154528.4, 465539.2], [154548.0, 465534.2], [154545.4, 465524.2], [154525.8, 465529.2]],
+    [[154519.1, 465528.1], [154529.0, 465525.6], [154524.0, 465506.1], [154514.1, 465508.6]],
+    [[154531.7, 465524.9], [154542.0, 465522.0], [154536.6, 465502.8], [154526.3, 465505.7]],
+    [[154560.0, 465561.5], [154579.0, 465556.8], [154576.4, 465546.9], [154557.5, 465551.8]],
+    [[154579.0, 465556.8], [154600.0, 465551.4], [154597.5, 465541.5], [154576.4, 465546.9]],
+  ];
+  const SHIRTS = [[224, 64, 52], [40, 96, 196], [244, 200, 60], [36, 150, 96], [236, 236, 232], [30, 32, 38], [232, 118, 40], [150, 70, 160]];
+  const SKINS = [[236, 196, 164], [214, 168, 128], [176, 124, 88], [118, 80, 56]];
+  const HAIRS = [[60, 42, 30], [30, 26, 24], [150, 110, 60], [200, 170, 110], [120, 120, 118]];
+  const LEGWEAR = [[40, 44, 56], [236, 236, 232], [30, 32, 38], [70, 80, 100]];
+  const SHOT = 1.5; // seconds a shot takes from one side to the other
+  let courts = null;
+  function makeCourts() {
+    return COURTS.map((rd, n) => {
+      const c = rd.map(([X, Y]) => rdToLocal(X, Y));
+      const x = c.reduce((s, p) => s + p.x, 0) / 4, z = c.reduce((s, p) => s + p.z, 0) / 4;
+      // The long side is the playing direction, across the net.
+      const e1 = [c[1].x - c[0].x, c[1].z - c[0].z], e2 = [c[2].x - c[1].x, c[2].z - c[1].z];
+      const [long, short] = Math.hypot(...e1) > Math.hypot(...e2) ? [e1, e2] : [e2, e1];
+      const L = Math.hypot(...long) / 2, W = Math.hypot(...short) / 2;
+      const ux = long[0] / (2 * L), uz = long[1] / (2 * L), vx = -uz, vz = ux;
+      const rnd = (i) => hash01(n * 31 + i);
+      const team = [SHIRTS[Math.floor(rnd(1) * SHIRTS.length)], SHIRTS[Math.floor(rnd(2) * SHIRTS.length)]];
+      if (team[0] === team[1]) team[1] = SHIRTS[(SHIRTS.indexOf(team[0]) + 3) % SHIRTS.length];
+      const players = [0, 1, 2, 3].map((i) => ({
+        end: i < 2 ? -1 : 1, lane: i % 2 ? 1 : -1, shirt: team[i < 2 ? 0 : 1],
+        skin: SKINS[Math.floor(rnd(10 + i) * SKINS.length)], hair: HAIRS[Math.floor(rnd(20 + i) * HAIRS.length)],
+        legs: LEGWEAR[Math.floor(rnd(30 + i) * LEGWEAR.length)], phase: rnd(40 + i) * 6.28,
+      }));
+      return { mode: PADEL, alpha: 1, x, z, ux, uz, vx, vz, L, W, players, phase: rnd(50) * 40, rally: 5 + Math.floor(rnd(51) * 6) };
+    });
+  }
+  const hash01 = (x) => { const s = Math.sin(x * 12.9898) * 43758.5453; return s - Math.floor(s); };
+  // Where on the court a shot goes: a lane (-1 left, 1 right, or between) at one end, from the shot's number.
+  const aim = (c, shot) => (hash01(shot * 7.31 + c.phase) * 2 - 1) * 0.75;
+  function drawPadel(ctx, c) {
+    const t = clock + c.phase, cycle = c.rally + 1.2; // a point: so many shots, then a pause of 1.2 shot lengths
+    const point = Math.floor(t / (cycle * SHOT)), inPoint = t / SHOT - point * cycle;
+    const shot = Math.floor(inPoint), s = inPoint - shot, playing = shot < c.rally;
+    const gshot = point * 100 + shot; // a number for this shot, unique within the game
+    // Shot n goes from end (-1)^n... : even shots from the -1 end to the +1 end, odd ones back.
+    const from = shot % 2 ? 1 : -1, to = -from;
+    const fromLane = aim(c, gshot - 1), toLane = aim(c, gshot);
+    const at = (end, lane, back = 0.62) => [c.x + c.ux * end * c.L * back + c.vx * lane * c.W, c.z + c.uz * end * c.L * back + c.vz * lane * c.W];
+    // The ball: up from the hitter's racket, over the net, a bounce at 3/4 of the way, up again to the receiver.
+    let bx, bz, bh;
+    if (playing) {
+      const [x0, z0] = at(from, fromLane * 0.9), [x1, z1] = at(to, toLane * 0.9);
+      bx = x0 + (x1 - x0) * s; bz = z0 + (z1 - z0) * s;
+      bh = s < 0.75 ? 1.1 + (2.6 - 1.1) * Math.sin((s / 0.75) * Math.PI) - 1.1 * (s / 0.75) : 1.0 * Math.sin(((s - 0.75) / 0.25) * Math.PI * 0.5);
+    } else {
+      // Between points: the server bounces the ball before serving.
+      const [x0, z0] = at(-1, aim(c, point * 100 + c.rally) * 0.9);
+      bx = x0 + c.vx * 0.35; bz = z0 + c.vz * 0.35; bh = 0.9 * Math.abs(Math.sin(t * 3.2));
+    }
+    const parts = [];
+    for (const p of c.players) {
+      // Each player keeps to their half of their end, moving toward the ball when it comes their way.
+      const own = p.end === to ? toLane : p.end === from ? fromLane : 0;
+      const mine = playing && Math.sign(own || p.lane) === p.lane;
+      let lane = p.lane * 0.5 + (mine ? (own - p.lane * 0.5) * (p.end === to ? Math.min(1, s * 1.4) : Math.max(0, 1 - s * 2)) : 0);
+      lane = Math.max(-0.9, Math.min(0.9, lane)) + 0.04 * Math.sin(clock * 1.7 + p.phase);
+      const back = 0.5 + 0.12 * Math.sin(clock * 0.6 + p.phase);
+      const [px, pz] = at(p.end, lane, back);
+      const hitting = playing && mine && ((p.end === from && s < 0.12) || (p.end === to && s > 0.9));
+      const fx = -c.ux * p.end, fz = -c.uz * p.end; // facing the net
+      const step = Math.sin(clock * 9 + p.phase) * (mine ? 0.1 : 0.04);
+      const r = hitting ? [1.25, 1.75] : [0.85, 1.15]; // racket raised to hit
+      parts.push([depthOf(px, pz), () => drawBoxes(ctx, px, pz, fx, fz, [
+        [step - 0.07, step + 0.07, 0.055, 0, 0.8, p.legs, -0.1],
+        [-step - 0.07, -step + 0.07, 0.055, 0, 0.8, p.legs, 0.1],
+        [-0.12, 0.12, 0.2, 0.8, 1.4, p.shirt],
+        [-0.09, 0.09, 0.09, 1.42, 1.62, p.skin],
+        [-0.1, 0.06, 0.1, 1.6, 1.68, p.hair],
+        [0.05, 0.2, 0.05, r[0], r[1], [34, 34, 40], 0.32],
+      ])]);
+    }
+    // The ball, with its shadow on the court.
+    parts.push([depthOf(bx, bz), () => {
+      const [gx, gy] = toPx(bx, bz, 0), [px, py] = toPx(bx, bz, bh);
+      ctx.beginPath(); ctx.ellipse(gx, gy, 0.6, 0.3, 0, 0, Math.PI * 2); ctx.fillStyle = 'rgba(16,20,30,0.3)'; ctx.fill();
+      ctx.beginPath(); ctx.arc(px, py, 0.55, 0, Math.PI * 2); ctx.fillStyle = 'rgb(222,240,70)'; ctx.fill();
+    }]);
+    parts.sort((a, b) => b[0] - a[0]);
+    for (const [, draw] of parts) draw();
+  }
+
   // A bird: two wings that beat, with its shadow far off on the ground.
   function drawBird(ctx, f, b, inView) {
     const nx = -f.dz, nz = f.dx;
@@ -1643,7 +1737,9 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
       const [x, z, dx, dz] = place(m);
       if (inView(x, z, 0)) (objectsLayer && m.behind ? behind : front).push([depthOf(x, z), m, x, z, dx, dz]);
     }
-    // No swimmers here: the pond by the Architectenbuurt is no swimming water.
+    // No swimmers here: the pond by the Architectenbuurt is no swimming water. On the padel courts they play doubles.
+    courts ||= makeCourts();
+    if (k >= 0.35) for (const c of courts) if (inView(c.x, c.z, 0)) front.push([depthOf(c.x, c.z), c, c.x, c.z, c.ux, c.uz]);
     paint(ctx, b, k, front, inView);
   }
 
@@ -1690,7 +1786,7 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
   // A street lamp every 34 m on one side of each village street: every residential street, and the bigger roads
   // within 650 m of the middle of the Architectenbuurt.
   function makeLamps() {
-    const village = rdToLocal(191900, 378000), done = new Set(), out = [];
+    const village = rdToLocal(155650, 465950), done = new Set(), out = [];
     for (const l of lanes) {
       const anywhere = l.c === 'residential' || l.c === 'living_street';
       if (done.has(l.e) || !(anywhere || l.c === 'tertiary' || l.c === 'unclassified')) continue;
