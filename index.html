@@ -1177,13 +1177,44 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
         if (p) goPlace(p);
       } else {
         found.textContent = '';
-        // To the middle of the lit-up area when there is one, otherwise to the button's own spot.
+        // Zoom out or in until the whole lit-up area fits, otherwise to the button's own spot.
         const area = (window.mapAreas || {})[b.dataset.area];
-        const [X, Y] = area && area.x ? [area.x, area.y] : b.dataset.rd.split(',').map(Number);
-        flyTo(X, Y);
+        if (area && area.rings) fitArea(area);
+        else flyTo(...b.dataset.rd.split(',').map(Number));
       }
     });
   });
+  // Fit an area in the part of the map that the intro panel leaves free: right of it on a wide screen, below it on a
+  // narrow one. The top of the box is raised by 24 m, so the roofs along the far edge stay in view too.
+  function fitArea(area) {
+    const vp = viewer.viewport, cw = viewer.container.clientWidth, ch = viewer.container.clientHeight;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const r of area.rings) for (const [X, Y] of r) {
+      const g = rdToLocal(X, Y), p = groundToImage(g.x, g.z, 0);
+      x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y);
+    }
+    y0 -= 24 * COS30 * M.scale;
+    const a = vp.imageToViewportCoordinates(new OpenSeadragon.Point(x0, y0));
+    const b = vp.imageToViewportCoordinates(new OpenSeadragon.Point(x1, y1));
+    // The free part of the screen, in pixels.
+    let fx = 0, fy = 0, fw = cw, fh = ch;
+    const intro = document.getElementById('intro'), c = viewer.container.getBoundingClientRect();
+    if (intro && intro.offsetParent) {
+      const r = intro.getBoundingClientRect();
+      if (cw - (r.right - c.left) > 320) { fx = r.right - c.left; fw = cw - fx; }
+      else if (ch - (r.bottom - c.top) > 240) { fy = r.bottom - c.top; fh = ch - fy; }
+    }
+    const m = Math.min(48, fw * 0.08, fh * 0.08);
+    fx += m; fy += m; fw -= 2 * m; fh -= 2 * m;
+    // At zoom z one viewport unit is cw * z pixels, both ways.
+    const z = Math.min(fw / (cw * (b.x - a.x)), fh / (cw * (b.y - a.y)), vp.imageToViewportZoom(1), vp.getMaxZoom());
+    const mid = new OpenSeadragon.Point((a.x + b.x) / 2, (a.y + b.y) / 2);
+    const shift = new OpenSeadragon.Point((fx + fw / 2 - cw / 2) / (cw * z), (fy + fh / 2 - ch / 2) / (cw * z));
+    vp.zoomTo(z, null, false);
+    vp.panTo(mid.minus(shift), false);
+    if (marker) unanchor(marker);
+    marker = null;
+  }
   // Light up the neighbourhood of a place button (extras.json areas: CBS wijken and buurten, the pond, the A28): the
   // rest of the map goes darker and its edge glows. Buildings in it stay light up to their roofs, because the dark
   // layer leaves out the outline raised up to 24 m as well. The same button again, or Escape, puts the light back.
