@@ -752,6 +752,7 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
     fetch('routes.json', { cache: 'no-store' }).then((r) => r.json()).then(addRoutes);
     fetch('history.json', { cache: 'no-store' }).then((r) => r.json()).then(addTour);
     fetch('traffic.json', { cache: 'no-store' }).then((r) => r.json()).then(addTraffic).catch(() => {});
+    fetch('extras.json', { cache: 'no-store' }).then((r) => r.json()).then((d) => { extras = makeExtras(d); }).catch(() => {});
   });
 
   // Hover: named buildings light up and show their name. Polygons come in screen meters; turn them into image pixels.
@@ -1519,6 +1520,7 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
     if (m.mode === WALK) return drawWalker(ctx, m, x, z, dx, dz);
     if (m.mode === SWIM) return drawDippers(ctx, m);
     if (m.mode === PADEL) return drawPadel(ctx, m);
+    if (m.mode === EXTRA) return m.draw(ctx);
     const V = VEHICLES[m.type];
     drawBoxes(ctx, x, z, dx, dz, V.boxes, (role) => (role === 'dark' ? DARK : role === 'load' ? m.load : m.paint), { sort: V.sort, outline: !V.bike });
   }
@@ -1662,7 +1664,7 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
     for (const p of c.players) {
       // Each player keeps to their half of their end, moving toward the ball when it comes their way.
       const own = p.end === to ? toLane : p.end === from ? fromLane : 0;
-      const mine = playing && Math.sign(own || p.lane) === p.lane;
+      const mine = playing && (c.single || Math.sign(own || p.lane) === p.lane);
       let lane = p.lane * 0.5 + (mine ? (own - p.lane * 0.5) * (p.end === to ? Math.min(1, s * 1.4) : Math.max(0, 1 - s * 2)) : 0);
       lane = Math.max(-0.9, Math.min(0.9, lane)) + 0.04 * Math.sin(clock * 1.7 + p.phase);
       const back = 0.5 + 0.12 * Math.sin(clock * 0.6 + p.phase);
@@ -1688,6 +1690,355 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
     }]);
     parts.sort((a, b) => b[0] - a[0]);
     for (const [, draw] of parts) draw();
+  }
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // Life on the pitches, the fountain, the fuel station and the trains (extras.json, from scripts/build_extras.py).
+  // Each thing is an item with a place (x, z) and a draw(ctx); the frame loop puts the ones in view in with the
+  // traffic, so they are drawn in depth order with everything else. Items with behind: true go under the buildings
+  // layer, like the pumps and cars under the canopy of the fuel station.
+  let extras = null;
+  const EXTRA = 5;
+  const local = (X, Y) => rdToLocal(X, Y);
+  function fieldOf(r) {
+    // A pitch: centre, unit vectors along (u) and across (v) in local ground coordinates, half length and width.
+    const c = local(r.x, r.y), ux = r.ux, uz = -r.uy;
+    return { x: c.x, z: c.z, ux, uz, vx: -uz, vz: ux, hl: r.hl, hw: r.hw };
+  }
+  // Field coordinates (a along the length, b across, both -1..1) to the ground.
+  const onField = (f, a, b) => [f.x + f.ux * a * f.hl + f.vx * b * f.hw, f.z + f.uz * a * f.hl + f.vz * b * f.hw];
+  const sub = (f, a0, a1, b0, b1) => {
+    // Part of a field as a field of its own (for the training game on half the pitch).
+    const [x, z] = onField(f, (a0 + a1) / 2, (b0 + b1) / 2);
+    return { ...f, x, z, hl: f.hl * (a1 - a0) / 2, hw: f.hw * (b1 - b0) / 2 };
+  };
+  const KIT = [[[208, 32, 40], [250, 250, 250]], [[30, 70, 170], [250, 250, 250]], [[250, 250, 250], [30, 32, 38]], [[246, 196, 30], [30, 32, 38]], [[36, 140, 70], [250, 250, 250]], [[30, 32, 38], [30, 32, 38]]];
+  const KEEPER = [[44, 180, 90], [250, 140, 30]];
+
+  // A person standing or running: legs that step with the speed, shirt, head and hair.
+  function person(ctx, x, z, dx, dz, p, run, arms = 0) {
+    const sw = Math.sin(p.stride) * 0.22 * Math.min(1, run);
+    drawBoxes(ctx, x, z, dx, dz, [
+      [sw - 0.07, sw + 0.07, 0.055, 0, 0.5, p.socks || p.shorts, -0.1],
+      [-sw - 0.07, -sw + 0.07, 0.055, 0, 0.5, p.socks || p.shorts, 0.1],
+      [-0.1, 0.1, 0.17, 0.5, 0.82, p.shorts],
+      [-0.12, 0.12, 0.2, 0.82, 1.4, p.shirt],
+      [-0.09, 0.09, 0.09, 1.42, 1.62, p.skin],
+      [-0.1, 0.06, 0.1, 1.6, 1.68, p.hair],
+      ...(arms ? [[-0.05, 0.05, 0.05, 1.3, 1.3 + arms, p.skin, 0.26]] : []),
+    ]);
+  }
+  function ball(ctx, x, z, h, r, color) {
+    const [gx, gy] = toPx(x, z, 0), [px, py] = toPx(x, z, h);
+    ctx.beginPath(); ctx.ellipse(gx, gy, r * 1.2, r * 0.6, 0, 0, Math.PI * 2); ctx.fillStyle = 'rgba(16,20,30,0.3)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill();
+  }
+  const rnd = (seed) => hash01(seed * 1.618 + 0.31);
+
+  // A team game: two sides in formation on a field (a = -1 is team 0's goal), a ball passed from player to player,
+  // now and then a shot at goal that the keeper catches. Players move toward their place in the formation, shifted
+  // toward the ball; the one nearest to a loose ball goes for it.
+  function makeGame(f, o) {
+    const players = [];
+    for (const team of [0, 1]) {
+      const kit = o.kits[team];
+      o.formation.forEach(([a, b], i) => {
+        const keeper = i === 0 && o.keepers;
+        const home = [team ? -a : a, b];
+        players.push({ team, keeper, home, pos: [...home], stride: rnd(players.length) * 6, speed: 0, dir: [team ? -1 : 1, 0],
+          shirt: keeper ? KEEPER[team] : kit[0], shorts: kit[1], socks: keeper ? KEEPER[team] : kit[0],
+          skin: SKINS[Math.floor(rnd(players.length + 50) * SKINS.length)], hair: HAIRS[Math.floor(rnd(players.length + 90) * HAIRS.length)] });
+      });
+    }
+    const g = { f, o, players, owner: o.formation.length - 1, flight: null, hold: 1, last: clock, ballPos: [0, 0], ballH: o.carry };
+    return g;
+  }
+  function stepGame(g) {
+    const dt = Math.min(0.1, clock - g.last), { f, o, players } = g;
+    g.last = clock;
+    if (dt <= 0) return;
+    const toM = (a, b) => [a * f.hl, b * f.hw]; // field units to metres, for distances
+    const dist = (p, q) => Math.hypot((p[0] - q[0]) * f.hl, (p[1] - q[1]) * f.hw);
+    // The ball.
+    if (g.flight) {
+      const fl = g.flight;
+      fl.t += dt / fl.dur;
+      const t = Math.min(1, fl.t);
+      g.ballPos = [fl.from[0] + (fl.to[0] - fl.from[0]) * t, fl.from[1] + (fl.to[1] - fl.from[1]) * t];
+      g.ballH = o.carry + fl.arc * Math.sin(Math.PI * t);
+      if (fl.t >= 1) {
+        g.flight = null;
+        g.owner = fl.receiver;
+        g.hold = o.hold[0] + Math.random() * (o.hold[1] - o.hold[0]);
+      }
+    } else {
+      const own = players[g.owner];
+      g.ballPos = [own.pos[0] + own.dir[0] * 0.5 / f.hl, own.pos[1] + own.dir[1] * 0.5 / f.hw];
+      g.ballH = o.carry;
+      g.hold -= dt;
+      if (g.hold <= 0) {
+        const goal = own.team ? -1 : 1; // the goal this player's team attacks
+        const mates = players.map((p, i) => i).filter((i) => i !== g.owner && players[i].team === own.team && !players[i].keeper);
+        const near = Math.abs(own.pos[0] - goal) < o.shootFrom;
+        if (near && Math.random() < 0.7) {
+          // A shot: the other team's keeper takes it (and the game starts again from there).
+          const keeper = players.findIndex((p) => p.team !== own.team && p.keeper);
+          const to = [goal * 0.98, (Math.random() - 0.5) * o.goalW];
+          g.flight = { from: [...g.ballPos], to, t: 0, dur: o.shot, arc: o.shotArc, receiver: keeper >= 0 ? keeper : g.owner };
+        } else {
+          // A pass, mostly forward; one in six goes astray to the nearest opponent.
+          let receiver;
+          if (Math.random() < 1 / 6) {
+            const opp = players.map((p, i) => i).filter((i) => players[i].team !== own.team && !players[i].keeper);
+            receiver = opp.reduce((b, i) => (dist(players[i].pos, own.pos) < dist(players[b].pos, own.pos) ? i : b), opp[0]);
+          } else {
+            const w = mates.map((i) => Math.max(0.05, 1 + goal * (players[i].pos[0] - own.pos[0]) * 1.5) / (1 + dist(players[i].pos, own.pos) / o.passLen));
+            let r = Math.random() * w.reduce((s, x) => s + x, 0);
+            receiver = mates[w.findIndex((x) => (r -= x) <= 0)] ?? mates[0];
+          }
+          const to = [...players[receiver].pos];
+          const len = dist(to, g.ballPos);
+          g.flight = { from: [...g.ballPos], to, t: 0, dur: Math.max(0.35, len / o.passSpeed), arc: len > o.passLen ? o.lobArc : o.passArc, receiver };
+        }
+      }
+    }
+    // The players.
+    const [ba, bb] = g.flight ? g.flight.to : g.ballPos;
+    for (const [i, p] of players.entries()) {
+      let ta, tb;
+      if (p.keeper) {
+        ta = p.home[0];
+        tb = Math.max(-o.goalW, Math.min(o.goalW, bb * 0.35));
+      } else if (g.flight && g.flight.receiver === i) {
+        [ta, tb] = g.flight.to;
+      } else if (!g.flight && g.owner === i) {
+        const goal = p.team ? -1 : 1;
+        ta = p.pos[0] + goal * 0.15; // carry the ball forward
+        tb = p.pos[1] * 0.9;
+      } else {
+        ta = p.home[0] * o.spread + ba * (1 - o.spread);
+        tb = p.home[1] * 0.75 + bb * 0.25;
+      }
+      ta = Math.max(-0.97, Math.min(0.97, ta + 0.03 * Math.sin(clock * 0.5 + i)));
+      tb = Math.max(-0.97, Math.min(0.97, tb + 0.05 * Math.cos(clock * 0.4 + i * 1.7)));
+      const [mx, my] = toM(ta - p.pos[0], tb - p.pos[1]), d = Math.hypot(mx, my);
+      const v = Math.min(d / dt, d > 2 ? o.run : o.run * 0.45);
+      if (d > 0.05) {
+        p.pos[0] += (mx / d) * v * dt / f.hl;
+        p.pos[1] += (my / d) * v * dt / f.hw;
+        p.dir = [mx / d, my / d];
+      } else {
+        const [fx, fy] = toM(ba - p.pos[0], bb - p.pos[1]), fd = Math.hypot(fx, fy) || 1;
+        p.dir = [fx / fd, fy / fd];
+      }
+      p.speed = v;
+      p.stride += v * dt * 3.2;
+    }
+  }
+  function gameItems(g, items) {
+    const { f, o } = g;
+    const dirOf = ([da, db]) => [f.ux * da + f.vx * db, f.uz * da + f.vz * db];
+    for (const p of g.players) {
+      const [x, z] = onField(f, p.pos[0], p.pos[1]), [dx, dz] = dirOf(p.dir);
+      items.push({ x, z, draw: (ctx) => person(ctx, x, z, dx, dz, p, p.speed / o.run, o.hands ? 0.25 : 0) });
+    }
+    const [x, z] = onField(f, g.ballPos[0], g.ballPos[1]);
+    items.push({ x, z, draw: (ctx) => ball(ctx, x, z, g.ballH, o.ballR, o.ballColor) });
+  }
+
+  // Football: 4-4-2 with a keeper; handball: a keeper and six court players.
+  const FOOTBALL_11 = [[-0.94, 0], [-0.62, -0.62], [-0.66, -0.2], [-0.66, 0.2], [-0.62, 0.62], [-0.25, -0.65], [-0.3, -0.22], [-0.3, 0.22], [-0.25, 0.65], [0.08, -0.25], [0.1, 0.25]];
+  const FOOTBALL_5 = [[-0.9, 0], [-0.5, -0.45], [-0.5, 0.45], [-0.1, -0.2], [0.15, 0.3]];
+  const HANDBALL_7 = [[-0.93, 0], [-0.55, -0.85], [-0.6, -0.4], [-0.62, 0], [-0.6, 0.4], [-0.55, 0.85], [-0.2, 0]];
+  const FOOTBALL = { keepers: true, carry: 0.11, ballR: 0.42, ballColor: 'rgb(248,248,244)', hold: [0.4, 1.6], passSpeed: 15, passLen: 25, passArc: 0.3,
+    lobArc: 4, shot: 0.7, shotArc: 1.2, shootFrom: 0.35, goalW: 0.11, run: 6, spread: 0.6 };
+  const HANDBALL = { keepers: true, hands: true, carry: 1.15, ballR: 0.36, ballColor: 'rgb(236,220,90)', hold: [0.4, 1.2], passSpeed: 13, passLen: 12, passArc: 0.4,
+    lobArc: 1.5, shot: 0.45, shotArc: 0.6, shootFrom: 0.45, goalW: 0.15, run: 5, spread: 0.45 };
+
+  function makeExtras(d) {
+    const out = { games: [], tennis: [], fountain: null, fuel: null, rails: [] };
+    let n = 0;
+    for (const r of d.pitches || []) {
+      const f = fieldOf(r);
+      n++;
+      if (r.sport === 'football' && r.game === 'match') {
+        out.match = makeGame(f, { ...FOOTBALL, formation: FOOTBALL_11, kits: [KIT[0], KIT[1]] });
+        out.games.push(out.match);
+        out.ref = { f, p: { stride: 0, shirt: [24, 24, 26], shorts: [24, 24, 26], skin: SKINS[1], hair: HAIRS[1] }, pos: [0, 0.4], last: clock };
+      } else if (r.sport === 'football' && r.game === 'training') {
+        // Training: five against five on one half with small goals; on the other half three players dribble a
+        // slalom through a line of cones while the coach watches.
+        const half = sub(f, -0.95, -0.05, -0.85, 0.85);
+        out.games.push(makeGame(half, { ...FOOTBALL, formation: FOOTBALL_5, kits: [KIT[3], [[255, 120, 30], [30, 32, 38]]], goalW: 0.2, passLen: 14, shootFrom: 0.5, spread: 0.5 }));
+        out.training = { f, cones: [], dribblers: [0, 1, 2].map((i) => ({ i, p: { stride: i, shirt: i % 2 ? KIT[3][0] : [255, 120, 30], shorts: [30, 32, 38], skin: SKINS[(i + 1) % 4], hair: HAIRS[i % 5] } })) };
+        for (let i = 0; i < 9; i++) for (const lane of [-0.45, 0, 0.45]) out.training.cones.push([0.15 + i * 0.09, lane]);
+        out.training.coach = { stride: 0, shirt: [30, 32, 38], shorts: [30, 32, 38], skin: SKINS[0], hair: HAIRS[4] };
+      } else if (r.sport === 'handball') {
+        out.games.push(makeGame(f, { ...HANDBALL, formation: HANDBALL_7, kits: n % 2 ? [KIT[1], KIT[3]] : [KIT[4], KIT[2]] }));
+      } else if (r.sport === 'tennis') {
+        // Singles: one player at each end, white kit.
+        const W = [250, 250, 248];
+        out.tennis.push({ mode: PADEL, single: true, alpha: 1, x: f.x, z: f.z, ux: f.ux, uz: f.uz, vx: f.vx, vz: f.vz, L: f.hl, W: f.hw,
+          players: [-1, 1].map((end, i) => ({ end, lane: 0, shirt: i ? W : [40, 96, 196], skin: SKINS[Math.floor(rnd(n * 7 + i) * 4)], hair: HAIRS[Math.floor(rnd(n * 9 + i) * 5)], legs: W, phase: rnd(n + i) * 6 })),
+          phase: rnd(n * 3) * 40, rally: 4 + Math.floor(rnd(n * 5) * 6) });
+      }
+    }
+    if (d.fountain) out.fountain = local(d.fountain.x, d.fountain.y);
+    if (d.fuel) {
+      const f = fieldOf(d.fuel);
+      out.fuel = { f, pumps: d.fuel.pumps.map(([X, Y]) => local(X, Y)), cars: d.fuel.pumps.map((_, i) => ({ paint: [[200, 30, 36], [230, 230, 228], [40, 44, 52], [60, 90, 160], [150, 152, 156], [30, 90, 60]][i % 6], off: rnd(i + 3) * 60, side: i % 2 ? 1 : -1 })) };
+    }
+    for (const line of d.rails || []) {
+      const p = line.map(([X, Y]) => { const q = local(X, Y); return [q.x, q.z]; });
+      const cum = [0];
+      for (let i = 1; i < p.length; i++) cum.push(cum[i - 1] + Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]));
+      out.rails.push({ p, cum, len: cum[cum.length - 1], dirn: out.rails.length % 2 ? -1 : 1, period: 80 + rnd(out.rails.length + 11) * 90, off: rnd(out.rails.length + 21) * 100, cars: 3 + Math.floor(rnd(out.rails.length + 31) * 4) });
+    }
+    return out;
+  }
+
+  // A point on a track at a distance along it, and its heading.
+  function along(r, s) {
+    let i = 1;
+    while (i < r.cum.length - 1 && r.cum[i] < s) i++;
+    const a = r.p[i - 1], b = r.p[i], seg = r.cum[i] - r.cum[i - 1] || 1, t = Math.max(0, Math.min(1, (s - r.cum[i - 1]) / seg));
+    return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, (b[0] - a[0]) / seg, (b[1] - a[1]) / seg];
+  }
+  // NS: yellow double-deck carriages with a blue band and dark windows, a blue nose on the end cars.
+  const NS_YELLOW = [255, 196, 30], NS_BLUE = [16, 48, 130];
+  function trainItems(items, inArea) {
+    const CAR_LEN = 26.5, SPEED = 30;
+    for (const r of extras.rails) {
+      const t = (clock + r.off) % r.period, head = t * SPEED - 40; // distance of the front along the track
+      const length = r.cars * CAR_LEN;
+      if (head - length > r.len) continue;
+      for (let c = 0; c < r.cars; c++) {
+        const mid = head - (c + 0.5) * CAR_LEN;
+        if (mid < 0 || mid > r.len) continue;
+        const s = r.dirn > 0 ? mid : r.len - mid;
+        let [x, z, dx, dz] = along(r, s);
+        if (r.dirn < 0) dx = -dx, dz = -dz;
+        if (!inArea(x, z)) continue;
+        const front = c === 0, back = c === r.cars - 1;
+        items.push({ x, z, draw: (ctx) => drawBoxes(ctx, x, z, dx, dz, [
+          [-13, 13, 1.2, 0.3, 1.0, DARK],
+          [-13, 13, 1.4, 1.0, 4.4, NS_YELLOW],
+          [-12.4, 12.4, 1.42, 1.6, 2.2, GLASS],
+          [-12.4, 12.4, 1.42, 3.0, 3.6, GLASS],
+          [-13, 13, 1.43, 1.0, 1.25, NS_BLUE],
+          ...(front ? [[11.6, 13.2, 1.38, 1.0, 4.2, NS_BLUE]] : []),
+          ...(back ? [[-13.2, -11.6, 1.38, 1.0, 4.2, NS_BLUE]] : []),
+        ], (x) => x, { outline: true }) });
+      }
+    }
+  }
+
+  // The fountain: a jet of about 7 m that falls back in a crown, white spray and rings on the water.
+  function fountainItem(items) {
+    const { x, z } = extras.fountain;
+    items.push({ x, z, draw: (ctx) => {
+      ripple(ctx, x, z, 3.2 + 0.25 * Math.sin(clock * 1.3), 0.35);
+      ripple(ctx, x, z, 1.8 + 0.2 * Math.sin(clock * 2.1), 0.5);
+      for (let i = 0; i < 90; i++) {
+        const t = (clock * 0.55 + i / 90) % 1, a = i * 2.39996;
+        const r = (i % 3 === 0 ? 0.3 : 2.4) * t + 0.1 * Math.sin(clock * 3 + i);
+        const h = (i % 3 === 0 ? 7.2 : 5.2) * 4 * t * (1 - t);
+        const [px, py] = toPx(x + Math.cos(a) * r, z + Math.sin(a) * r, h);
+        ctx.beginPath();
+        ctx.arc(px, py, 0.55 + 0.35 * (1 - t), 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(240,248,255,${0.75 - 0.45 * t})`;
+        ctx.fill();
+      }
+    } });
+  }
+
+  // The fuel station: pumps under the canopy, cars that come and go, a driver at the pump, and a price sign.
+  function fuelItems(items) {
+    const { f, pumps, cars } = extras.fuel;
+    pumps.forEach((p, i) => {
+      items.push({ x: p.x, z: p.z, behind: true, draw: (ctx) => drawBoxes(ctx, p.x, p.z, f.ux, f.uz, [
+        [-0.5, 0.5, 0.35, 0, 0.25, [150, 150, 152]],
+        [-0.35, 0.35, 0.3, 0.25, 1.75, [236, 236, 232]],
+        [-0.35, 0.35, 0.31, 1.45, 1.75, [30, 120, 70]],
+      ], (x) => x) });
+      const car = cars[i], t = (clock + car.off) % 60;
+      if (t > 42) return;
+      const alpha = Math.min(1, t / 1.5, (42 - t) / 1.5);
+      const cx = p.x + f.vx * car.side * 2.3, cz = p.z + f.vz * car.side * 2.3;
+      items.push({ x: cx, z: cz, behind: true, alpha, draw: (ctx) => {
+        drawBoxes(ctx, cx, cz, f.ux, f.uz, VEHICLES.car.boxes, (role) => (role === 'cabin' ? GLASS : car.paint), { outline: true });
+        if (t > 4 && t < 36) {
+          const dx = cx - f.vx * car.side * 1.25 + f.ux * 1.1, dz = cz - f.vz * car.side * 1.25 + f.uz * 1.1;
+          person(ctx, dx, dz, -f.vx * car.side, -f.vz * car.side, { stride: 0, shirt: car.paint, shorts: [40, 44, 56], skin: SKINS[i % 4], hair: HAIRS[i % 5] }, 0, 0.2);
+        }
+      } });
+    });
+    const [sx, sz] = onField(f, 1.12, -1.35);
+    items.push({ x: sx, z: sz, draw: (ctx) => drawBoxes(ctx, sx, sz, f.ux, f.uz, [
+      [-0.15, 0.15, 0.15, 0, 3, [120, 122, 126]],
+      [-0.12, 0.12, 0.7, 3, 6.4, [244, 244, 240]],
+      [-0.13, 0.13, 0.71, 5.6, 6.4, [24, 70, 150]],
+      [-0.13, 0.13, 0.6, 3.4, 3.8, [30, 120, 70]],
+      [-0.13, 0.13, 0.6, 4.1, 4.5, [30, 120, 70]],
+      [-0.13, 0.13, 0.6, 4.8, 5.2, [30, 120, 70]],
+    ], (x) => x) });
+  }
+
+  // The coach, the cones and the slalom of the training; the referee of the match.
+  function trainingItems(items) {
+    const tr = extras.training, f = tr.f;
+    for (const [a, b] of tr.cones) {
+      const [x, z] = onField(f, a, b);
+      items.push({ x, z, draw: (ctx) => drawBoxes(ctx, x, z, 1, 0, [[-0.12, 0.12, 0.12, 0, 0.08, [255, 110, 20]], [-0.06, 0.06, 0.06, 0.08, 0.3, [255, 110, 20]]], (x) => x) });
+    }
+    for (const d of tr.dribblers) {
+      const lane = [-0.45, 0, 0.45][d.i], s = (clock * 0.045 + d.i * 0.31) % 1, back = s > 0.5;
+      const a = back ? 0.15 + (1 - s) * 2 * 0.75 : 0.15 + s * 2 * 0.75;
+      const b = lane + (back ? 0.12 : 0.06 * Math.sin(a / 0.09 * Math.PI));
+      const [x, z] = onField(f, a, b);
+      const dir = back ? -1 : 1, dx = f.ux * dir, dz = f.uz * dir;
+      d.p.stride = clock * 9 + d.i;
+      items.push({ x, z, draw: (ctx) => person(ctx, x, z, dx, dz, d.p, 0.7) });
+      const [bx, bz] = [x + dx * 0.5, z + dz * 0.5];
+      items.push({ x: bx, z: bz, draw: (ctx) => ball(ctx, bx, bz, 0.11, 0.42, 'rgb(248,248,244)') });
+    }
+    const [cx, cz] = onField(f, 0.55, -0.92);
+    items.push({ x: cx, z: cz, draw: (ctx) => person(ctx, cx, cz, f.vx, f.vz, tr.coach, 0) });
+  }
+  function refItem(items) {
+    const r = extras.ref, g = extras.match, f = r.f, dt = Math.min(0.1, clock - r.last);
+    r.last = clock;
+    const ta = g.ballPos[0] * 0.8, tb = g.ballPos[1] * 0.5 + 0.35;
+    const mx = (ta - r.pos[0]) * f.hl, my = (tb - r.pos[1]) * f.hw, d = Math.hypot(mx, my), v = Math.min(d / Math.max(dt, 0.001), 4);
+    if (d > 0.1) r.pos[0] += (mx / d) * v * dt / f.hl, r.pos[1] += (my / d) * v * dt / f.hw;
+    r.p.stride += v * dt * 3.2;
+    const [x, z] = onField(f, r.pos[0], r.pos[1]);
+    items.push({ x, z, draw: (ctx) => person(ctx, x, z, f.ux, f.uz, r.p, v / 6) });
+  }
+
+  // All extras in view this frame, as [depth, item, ...] entries for the traffic's lists.
+  function extraEntries(k, inView, front) {
+    if (!extras) return;
+    const items = [];
+    const inArea = (x, z) => Math.abs(x) < M.area.hx - 3 && Math.abs(z) < M.area.hz - 3;
+    if (k >= 0.12) {
+      if (extras.fountain) fountainItem(items);
+      trainItems(items, inArea);
+    }
+    for (const g of extras.games) stepGame(g); // the games go on while nobody looks
+    if (k >= 0.35) {
+      for (const g of extras.games) if (inView(g.f.x, g.f.z, 0)) gameItems(g, items);
+      if (extras.training) trainingItems(items);
+      if (extras.ref) refItem(items);
+      if (extras.fuel && inView(extras.fuel.f.x, extras.fuel.f.z, 0)) fuelItems(items);
+      for (const c of extras.tennis) if (inView(c.x, c.z, 0)) front.push([depthOf(c.x, c.z), c, c.x, c.z, c.ux, c.uz]);
+    }
+    for (const it of items) {
+      if (!inView(it.x, it.z, 0)) continue;
+      it.mode = EXTRA;
+      it.alpha ??= 1;
+      (objectsLayer && it.behind ? behind : front).push([depthOf(it.x, it.z), it, it.x, it.z, 1, 0]);
+    }
   }
 
   // A bird: two wings that beat, with its shadow far off on the ground.
@@ -1740,6 +2091,7 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
     // No swimmers here: the pond by the Architectenbuurt is no swimming water. On the padel courts they play doubles.
     courts ||= makeCourts();
     if (k >= 0.35) for (const c of courts) if (inView(c.x, c.z, 0)) front.push([depthOf(c.x, c.z), c, c.x, c.z, c.ux, c.uz]);
+    extraEntries(k, inView, front);
     paint(ctx, b, k, front, inView);
   }
 
