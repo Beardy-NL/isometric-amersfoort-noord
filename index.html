@@ -98,6 +98,8 @@
   #found { font-size: 12px; color: var(--peat); min-height: 1em; }
   #places, #series { display: flex; flex-wrap: wrap; gap: 6px; }
   #series { align-items: center; }
+  /* A neighbourhood lit up from the place buttons: the rest of the map darker, a glow along its edge. */
+  svg.highlight { pointer-events: none; transition: opacity 0.5s; }
   #series > span { font: 500 11px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-right: 2px; }
   button {
     font: 500 12px/1 var(--body);
@@ -354,7 +356,7 @@
 
 <section id="intro" class="panel">
   <div class="intro-head">
-    <h1>Architectenbuurt</h1>
+    <h1>Amersfoort-Noord</h1>
     <button type="button" id="intro-toggle" aria-expanded="true" aria-controls="intro-body" aria-label="Menu in- of uitklappen" data-en-label="Show or hide the menu"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 5l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   </div>
   <div id="intro-body">
@@ -367,11 +369,11 @@
   <div id="found" aria-live="polite"></div>
   <div id="legend"><span><i></i><b data-en="Walking junctions">Wandelknooppunten</b></span><span><i class="long"></i><b data-en="Long-distance trails">Lange-afstandswandelpaden</b></span></div>
   <div id="places" role="group" aria-label="Snel naar" data-en-label="Go to">
-    <button type="button" data-rd="155800,465950" data-en="Architectenbuurt">Architectenbuurt</button>
-    <button type="button" data-rd="155511,466130" data-en="Pond">Vijver</button>
-    <button type="button" data-rd="154800,466850">Kattenbroek</button>
-    <button type="button" data-rd="155000,465150" data-en="Schothorst estate">Landgoed Schothorst</button>
-    <button type="button" data-rd="156600,466600">A28</button>
+    <button type="button" data-area="architectenbuurt" data-rd="155800,465950" data-en="Architectenbuurt">Architectenbuurt</button>
+    <button type="button" data-area="vijver" data-rd="155511,466130" data-en="Pond">Vijver</button>
+    <button type="button" data-area="kattenbroek" data-rd="155250,466700">Kattenbroek</button>
+    <button type="button" data-area="schothorst" data-rd="155000,465150" data-en="Schothorst estate">Landgoed Schothorst</button>
+    <button type="button" data-area="a28" data-rd="156600,466600">A28</button>
     <button type="button" id="routes-toggle" aria-pressed="false" data-en="Walking routes">Wandelroutes</button>
   </div>
   <div id="series" role="group" aria-label="Ontdek" data-en-label="Explore">
@@ -752,7 +754,7 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
     fetch('routes.json', { cache: 'no-store' }).then((r) => r.json()).then(addRoutes);
     fetch('history.json', { cache: 'no-store' }).then((r) => r.json()).then(addTour);
     fetch('traffic.json', { cache: 'no-store' }).then((r) => r.json()).then(addTraffic).catch(() => {});
-    fetch('extras.json', { cache: 'no-store' }).then((r) => r.json()).then((d) => { extras = makeExtras(d); }).catch(() => {});
+    fetch('extras.json', { cache: 'no-store' }).then((r) => r.json()).then((d) => { extras = makeExtras(d); window.mapAreas = d.areas || {}; }).catch(() => {});
   });
 
   // Hover: named buildings light up and show their name. Polygons come in screen meters; turn them into image pixels.
@@ -1170,11 +1172,68 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
         if (p) goPlace(p);
       } else {
         found.textContent = '';
-        const [X, Y] = b.dataset.rd.split(',').map(Number);
+        // To the middle of the lit-up area when there is one, otherwise to the button's own spot.
+        const area = (window.mapAreas || {})[b.dataset.area];
+        const [X, Y] = area && area.x ? [area.x, area.y] : b.dataset.rd.split(',').map(Number);
         flyTo(X, Y);
       }
     });
   });
+  // Light up the neighbourhood of a place button (extras.json areas: CBS wijken and buurten, the pond, the A28): the
+  // rest of the map goes darker and its edge glows. Buildings in it stay light up to their roofs, because the dark
+  // layer leaves out the outline raised up to 24 m as well. The same button again, or Escape, puts the light back.
+  let lit = null, hlSvg = null;
+  const areasOf = () => window.mapAreas || {};
+  function highlight(key) {
+    if (!viewer) return;
+    if (!hlSvg) {
+      hlSvg = document.createElementNS(SVG, 'svg');
+      hlSvg.setAttribute('class', 'highlight');
+      hlSvg.setAttribute('viewBox', `0 0 ${M.width} ${M.height}`);
+      hlSvg.setAttribute('preserveAspectRatio', 'none');
+      hlSvg.style.overflow = 'visible';
+      hlSvg.style.opacity = 0;
+      const W = M.width, H = M.height, g = 4 * M.scale;
+      hlSvg.innerHTML = `<defs>
+          <mask id="hl-mask" maskUnits="userSpaceOnUse" x="${-W}" y="${-H}" width="${3 * W}" height="${3 * H}">
+            <rect x="${-W}" y="${-H}" width="${3 * W}" height="${3 * H}" fill="white"/><g id="hl-holes" fill="black"></g>
+          </mask>
+          <filter id="hl-glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="${g}"/></filter>
+        </defs>
+        <rect x="${-W}" y="${-H}" width="${3 * W}" height="${3 * H}" fill="rgb(6,8,14)" fill-opacity="0.58" mask="url(#hl-mask)"/>
+        <path id="hl-glow-line" fill="none" stroke="rgb(255,214,120)" stroke-opacity="0.9" stroke-width="${2.2 * M.scale}" filter="url(#hl-glow)"/>
+        <path id="hl-line" fill="none" stroke="rgb(255,240,200)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`;
+      viewer.addOverlay({ element: hlSvg, location: new OpenSeadragon.Rect(0, 0, 1, M.height / M.width) });
+      onView.push(() => lit && drawHighlight());
+    }
+    if (lit === key || !areasOf()[key]) {
+      lit = null;
+      hlSvg.style.opacity = 0;
+      return;
+    }
+    lit = key;
+    drawHighlight();
+    hlSvg.style.opacity = 1;
+  }
+  function drawHighlight() {
+    const a = areasOf()[lit];
+    const d = a.rings.map((r) => r.map(([X, Y], i) => {
+      const g = rdToLocal(X, Y), p = groundToImage(g.x, g.z, 0);
+      return `${i ? 'L' : 'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`;
+    }).join('') + 'Z').join('');
+    const holes = hlSvg.querySelector('#hl-holes');
+    holes.innerHTML = '';
+    for (let h = 0; h <= 24; h += 3) { // the outline at every 3 m up to 24 m: what stands in the area stays light
+      const path = document.createElementNS(SVG, 'path');
+      path.setAttribute('d', d);
+      path.setAttribute('transform', `translate(0,${(-h * COS30 * M.scale).toFixed(1)})`);
+      holes.appendChild(path);
+    }
+    hlSvg.querySelector('#hl-glow-line').setAttribute('d', d);
+    hlSvg.querySelector('#hl-line').setAttribute('d', d);
+  }
+  document.querySelectorAll('#places button[data-area]').forEach((b) => b.addEventListener('click', () => highlight(b.dataset.area)));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && lit) highlight(lit); });
   document.getElementById('zoom-in').addEventListener('click', () => viewer?.viewport.zoomBy(1.6));
   document.getElementById('zoom-out').addEventListener('click', () => viewer?.viewport.zoomBy(1 / 1.6));
   document.getElementById('zoom-home').addEventListener('click', () => {
