@@ -1934,29 +1934,32 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
     }
   }
 
-  // The fountain: a jet of about 14 m that falls back in a wide crown, spray drifting off, and rings that spread
-  // over the water from where it comes down.
+  // The fountain: three jets side by side, the middle one about 14 m high and the outer two about 10 m, each falling
+  // back in a crown, spray drifting off, foam where the water comes down and rings that spread over the water.
+  const JETS = [[0, 0, 14], [-2.8, 1.2, 10], [2.8, -1.2, 10]]; // offset east, south and height in metres
   function fountainItem(items) {
     const { x, z } = extras.fountain;
     items.push({ x, z, draw: (ctx) => {
-      for (let k = 0; k < 4; k++) { // rings spreading from the foot of the jet
+      for (let k = 0; k < 4; k++) { // rings spreading from where the water comes down
         const t = (clock * 0.25 + k / 4) % 1;
-        ripple(ctx, x, z, 2 + 9 * t, 0.45 * (1 - t));
+        ripple(ctx, x, z, 3 + 10 * t, 0.45 * (1 - t));
       }
       const [fx, fy] = toPx(x, z, 0);
-      ctx.beginPath(); ctx.ellipse(fx, fy, 5.2 * M.scale, 2.6 * M.scale, 0, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(235,244,252,0.35)'; ctx.fill(); // foam where the water falls
-      for (let i = 0; i < 220; i++) {
-        const jet = i % 4 === 0, t = (clock * (jet ? 0.42 : 0.5) + i / 220) % 1, a = i * 2.39996;
-        const r = (jet ? 0.6 : 4.6) * t + 0.15 * Math.sin(clock * 3 + i);
-        const h = (jet ? 14 : 9) * 4 * t * (1 - t);
-        const drift = 0.8 * t * t; // the wind takes the spray a little east
-        const [px, py] = toPx(x + Math.cos(a) * r + drift, z + Math.sin(a) * r, h);
-        ctx.beginPath();
-        ctx.arc(px, py, (jet ? 1.1 : 0.85) + 0.5 * (1 - t), 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(244,250,255,${0.8 - 0.5 * t})`;
-        ctx.fill();
-      }
+      ctx.beginPath(); ctx.ellipse(fx, fy, 6.5 * M.scale, 3.25 * M.scale, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(235,244,252,0.35)'; ctx.fill(); // foam
+      JETS.forEach(([ox, oz, top], j) => {
+        for (let i = 0; i < 80; i++) {
+          const core = i % 3 === 0, t = (clock * (core ? 0.42 : 0.5) + i / 80 + j * 0.13) % 1, a = i * 2.39996 + j;
+          const r = (core ? 0.4 : 2.2) * t + 0.12 * Math.sin(clock * 3 + i);
+          const h = (core ? top : top * 0.68) * 4 * t * (1 - t);
+          const drift = 0.8 * t * t; // the wind takes the spray a little east
+          const [px, py] = toPx(x + ox + Math.cos(a) * r + drift, z + oz + Math.sin(a) * r, h);
+          ctx.beginPath();
+          ctx.arc(px, py, (core ? 1 : 0.8) + 0.45 * (1 - t), 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(244,250,255,${0.8 - 0.5 * t})`;
+          ctx.fill();
+        }
+      });
     } });
   }
 
@@ -1975,8 +1978,8 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
     const wet = (x, z) => inRing(x, z, rings[0]) && !rings.slice(1).some((r) => inRing(x, z, r)) && !cuts.some((r) => inRing(x, z, r));
     const xs = rings[0].map((p) => p[0]), zs = rings[0].map((p) => p[1]);
     const waves = [];
-    for (let x = Math.min(...xs); x < Math.max(...xs); x += 5) {
-      for (let z = Math.min(...zs); z < Math.max(...zs); z += 3.6) {
+    for (let x = Math.min(...xs); x < Math.max(...xs); x += 7) {
+      for (let z = Math.min(...zs); z < Math.max(...zs); z += 5) {
         const jx = x + (hash01(x * 3.1 + z) - 0.5) * 3, jz = z + (hash01(z * 2.7 - x) - 0.5) * 2.4;
         if (wet(jx, jz)) waves.push([jx, jz, hash01(jx + jz * 7) * 6.28, 0.7 + hash01(jx * 5 - jz) * 0.9]);
       }
@@ -1986,10 +1989,11 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
     return { rings, cuts, waves, x: sx / waves.length, z: sz / waves.length };
   }
   const WIND = [0.8, 0.6]; // the waves drift toward the south-east, slowly
-  function pondItem(items) {
+  function pondItem(items, inView) {
     const p = extras.pond;
-    // Always drawn (the pond is larger than the view), first of all (it lies under everything else).
-    items.push({ x: p.x, z: p.z, behind: true, always: true, depth: 1e9, draw: (ctx) => {
+    // Always drawn (the pond is larger than the view), first of all (it lies under everything else). Not in the layer
+    // under the buildings: whatever is in that layer makes the whole map redraw every frame, and the pond is always there.
+    items.push({ x: p.x, z: p.z, always: true, depth: 1e9, draw: (ctx) => {
       ctx.save();
       ctx.beginPath();
       for (const r of [...p.rings, ...p.cuts]) {
@@ -2001,6 +2005,7 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
       const nx = -WIND[1], nz = WIND[0]; // along the crest, across the wind
       const drift = clock * 0.35;
       for (const [x0, z0, ph, len] of p.waves) {
+        if (!inView(x0, z0, 0)) continue;
         // A crest rises and falls as rows of waves pass: the phase moves with the wind.
         const w = Math.sin(ph + (x0 * WIND[0] + z0 * WIND[1]) * 0.35 - clock * 1.1);
         if (w < 0.2) continue;
@@ -2088,11 +2093,11 @@ Werk stap voor stap, controleer de licenties van de data die je gebruikt, en vra
     const items = [];
     const inArea = (x, z) => Math.abs(x) < M.area.hx - 3 && Math.abs(z) < M.area.hz - 3;
     if (k >= 0.12) {
-      if (extras.pond && inView(extras.pond.x, extras.pond.z, 0)) pondItem(items);
       if (extras.fountain) fountainItem(items);
       trainItems(items, inArea);
     }
     for (const g of extras.games) stepGame(g); // the games go on while nobody looks
+    if (k >= 0.3 && extras.pond) pondItem(items, inView);
     if (k >= 0.35) {
       for (const g of extras.games) if (inView(g.f.x, g.f.z, 0)) gameItems(g, items);
       if (extras.training) trainingItems(items);
